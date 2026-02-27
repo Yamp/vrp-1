@@ -92,7 +92,6 @@ fn combine_features(
     let state: Option<Arc<dyn FeatureState>> = match states.len() {
         0 => None,
         1 => states.first().cloned(),
-        // TODO: combined feature state seems behave differently: check reload with one state wrapped in CombinedFeatureState
         _ => Some(Arc::new(CombinedFeatureState::new(states))),
     };
 
@@ -117,7 +116,14 @@ impl FeatureState for CombinedFeatureState {
     }
 
     fn accept_route_state(&self, route_ctx: &mut RouteContext) {
-        accept_route_state_with_states(&self.states, route_ctx)
+        // NOTE: do NOT delegate to accept_route_state_with_states here.
+        // That function checks is_stale(), clears all state, and marks not-stale.
+        // When called from within a parent accept_route_state_with_states iteration,
+        // this would erase state written by prior feature states and prematurely
+        // mark the route as not-stale, preventing subsequent combined states from running.
+        let activities = route_ctx.route().tour.job_activity_count();
+        self.states.iter().for_each(|state| state.accept_route_state(route_ctx));
+        assert_eq!(activities, route_ctx.route().tour.job_activity_count());
     }
 
     fn accept_solution_state(&self, ctx: &mut SolutionContext) {

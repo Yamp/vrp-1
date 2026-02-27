@@ -68,6 +68,7 @@
 
 extern crate rand;
 
+use crate::construction::features::MaxVehicleLoadTourState;
 use crate::construction::heuristics::InsertionContext;
 use crate::models::common::{Footprint, FootprintSolutionState, Shadow};
 use crate::models::{GoalContext, Problem, Solution};
@@ -265,7 +266,11 @@ impl Solver {
                     .is_some_and(|end| end.schedule.arrival > shift_end)
             });
 
-            if initial_fitness < evolved_fitness || has_shift_violation {
+            let has_capacity_violation = insertion_ctx.solution.routes.iter().any(|route_ctx| {
+                route_ctx.state().get_max_vehicle_load().is_some_and(|&load| load > 1.0)
+            });
+
+            if initial_fitness < evolved_fitness || has_shift_violation || has_capacity_violation {
                 insertion_ctx = initial;
             }
         }
