@@ -200,7 +200,7 @@ pub(crate) fn accept_solution_state_with_states(states: &[Arc<dyn FeatureState>]
         // As it is hard to maintain dependencies between different modules, we reset process to
         // beginning. However we do not expect recalculation to happen often, so this condition
         // here is to prevent infinite loops and signalize about error in pipeline configuration
-        assert_ne!(counter, 100);
+        assert_ne!(counter, 1000);
 
         if has_changes(solution_ctx, (required, ignored, unassigned)) {
             let required = solution_ctx.required.len();

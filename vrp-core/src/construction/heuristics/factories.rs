@@ -1,4 +1,5 @@
 use super::*;
+use crate::construction::enablers::PreserveMarkersFlag;
 use crate::models::OP_START_MSG;
 use crate::models::common::{Cost, Schedule};
 use crate::models::problem::*;
@@ -160,6 +161,10 @@ pub fn create_insertion_context_from_solution(
         environment,
     };
 
+    // Preserve initial-solution markers (reloads/recharges) during the first
+    // accept_solution_state pass so that they are not removed by the obsolete-
+    // interval optimisation which only checks capacity, not routing impact.
+    insertion_ctx.solution.state.set_value::<PreserveMarkersFlag, bool>(true);
     update_insertion_context(&mut insertion_ctx);
 
     insertion_ctx

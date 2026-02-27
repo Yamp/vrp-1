@@ -236,5 +236,5 @@ impl FeatureState for TravelLimitState {
         }
     }
 
-    fn accept_solution_state(&self, _: &mut SolutionContext) {}
+    fn accept_solution_state(&self, _solution_ctx: &mut SolutionContext) {}
 }

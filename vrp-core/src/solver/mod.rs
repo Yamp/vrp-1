@@ -241,11 +241,34 @@ impl Solver {
             self.problem.fleet.actors.len()
         ));
 
+        // Save initial solution before evolution to guarantee we never return worse.
+        let initial = self.config.initial.individuals.first().map(|s| s.deep_copy());
+
         let (mut solutions, metrics) = EvolutionSimulator::new(self.config)?.run()?;
 
         // NOTE select the first best individual from population
-        let insertion_ctx = if solutions.is_empty() { None } else { solutions.drain(0..1).next() }
+        let mut insertion_ctx = if solutions.is_empty() { None } else { solutions.drain(0..1).next() }
             .ok_or_else(|| "cannot find any solution".to_string())?;
+
+        // Never return a solution worse than the initial: compare fitness lexicographically.
+        // Also prefer the initial if the evolved solution has shift time violations.
+        if let Some(initial) = initial {
+            let initial_fitness: Vec<_> = self.problem.goal.fitness(&initial).collect();
+            let evolved_fitness: Vec<_> = self.problem.goal.fitness(&insertion_ctx).collect();
+
+            let has_shift_violation = insertion_ctx.solution.routes.iter().any(|route_ctx| {
+                let shift_end = route_ctx.route().actor.detail.time.end;
+                route_ctx
+                    .route()
+                    .tour
+                    .end()
+                    .is_some_and(|end| end.schedule.arrival > shift_end)
+            });
+
+            if initial_fitness < evolved_fitness || has_shift_violation {
+                insertion_ctx = initial;
+            }
+        }
 
         let solution = (insertion_ctx, metrics).into();
 

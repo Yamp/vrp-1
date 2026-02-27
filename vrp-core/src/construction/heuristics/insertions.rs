@@ -368,7 +368,6 @@ pub(crate) fn prepare_insertion_ctx(insertion_ctx: &mut InsertionContext) {
 
 pub(crate) fn finalize_insertion_ctx(insertion_ctx: &mut InsertionContext) {
     finalize_unassigned(insertion_ctx, UnassignmentInfo::Unknown);
-
     insertion_ctx.problem.goal.accept_solution_state(&mut insertion_ctx.solution);
 }
 

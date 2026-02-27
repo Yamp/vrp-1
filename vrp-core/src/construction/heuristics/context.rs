@@ -2,7 +2,7 @@
 #[path = "../../../tests/unit/construction/heuristics/context_test.rs"]
 mod context_test;
 
-use crate::construction::enablers::{TotalDistanceTourState, TotalDurationTourState};
+use crate::construction::enablers::{PreserveMarkersFlag, TotalDistanceTourState, TotalDurationTourState};
 use crate::construction::heuristics::factories::*;
 use crate::models::GoalContext;
 use crate::models::common::Cost;
@@ -51,6 +51,8 @@ impl InsertionContext {
     ) -> Self {
         let mut ctx = create_insertion_context_from_solution(problem, solution, environment);
         ctx.restore();
+        // Allow normal marker removal during evolution.
+        ctx.solution.state.set_value::<PreserveMarkersFlag, bool>(false);
 
         ctx
     }

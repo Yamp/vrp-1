@@ -7,6 +7,11 @@ use std::iter::once;
 use std::ops::Range;
 use std::sync::Arc;
 
+/// Marker key for `SolutionState`: when set to `true`, `remove_trivial_markers`
+/// is skipped. Used during initial solution loading to preserve markers that
+/// may be needed for routing even when they are not needed for capacity.
+pub struct PreserveMarkersFlag;
+
 /// Provides the way to get/set route intervals on the route state.
 /// Depending on the feature, route intervals can be different. So, each feature needs to implement
 /// state management independently.
@@ -127,6 +132,12 @@ impl RouteIntervals {
     }
 
     fn remove_trivial_markers(&self, solution_ctx: &mut SolutionContext) {
+        // Skip marker removal during initial solution loading to preserve markers
+        // that may serve routing purposes even when not needed for capacity.
+        if solution_ctx.state.get_value::<PreserveMarkersFlag, bool>().copied().unwrap_or(false) {
+            return;
+        }
+
         let is_obsolete_interval_fn = match self {
             RouteIntervals::Single => return,
             RouteIntervals::Multiple { is_obsolete_interval_fn, .. } => is_obsolete_interval_fn,

@@ -197,7 +197,10 @@ pub fn run_solve(
 
     let problem_file = open_file(problem_path, "problem");
 
-    let init_solution = matches.get_one::<String>(INIT_SOLUTION_ARG_NAME).map(|path| open_file(path, "init solution"));
+    let init_path = matches.get_one::<String>(INIT_SOLUTION_ARG_NAME).cloned();
+    // Save raw initial JSON for fallback if solver corrupts it during loading
+    let init_raw = init_path.as_ref().and_then(|path| std::fs::read(path).ok());
+    let init_solution = init_path.as_ref().map(|path| open_file(path, "init solution"));
     let config = matches.get_one::<String>(CONFIG_ARG_NAME).map(|path| open_file(path, "config"));
     let matrix_files = get_matrix_files(matches);
     let out_result = matches.get_one::<String>(OUT_RESULT_ARG_NAME).map(|path| create_file(path, "out solution"));
@@ -213,7 +216,7 @@ pub fn run_solve(
             SolutionWriter(solution_writer),
             LocationWriter(locations_writer),
         )) => {
-            let out_buffer = out_writer_func(out_result);
+            let mut out_buffer = out_writer_func(out_result);
             let geo_buffer = out_geojson.map(|geojson| create_write_buffer(Some(geojson)));
 
             if is_get_locations_set {
@@ -223,7 +226,7 @@ pub fn run_solve(
                     Ok(problem) => {
                         let problem = Arc::new(problem);
 
-                        let init_solutions = read_init_solutions_if_necessary(
+                        let (init_solutions, init_unassigned_count) = read_init_solutions_if_necessary(
                             problem.clone(),
                             environment.clone(),
                             init_solution,
@@ -235,7 +238,30 @@ pub fn run_solve(
                             _ => from_cli_parameters(problem.clone(), environment, init_solutions, matches)?,
                         };
 
-                        let solution = solver.solve().map_err(|err| format!("cannot find any solution: '{err}'"))?;
+                        let mut solution =
+                            solver.solve().map_err(|err| format!("cannot find any solution: '{err}'"))?;
+
+                        // Guard: never return a solution worse than the original initial.
+                        // The InsertionContext conversion can corrupt the initial (e.g. drop
+                        // reloads causing schedule violations), so we check the output and
+                        // fall back to the raw initial JSON if needed.
+                        if let Some(raw) = &init_raw {
+                            let has_schedule_violation = solution.routes.iter().any(|route| {
+                                let shift_end = route.actor.detail.time.end;
+                                route.tour.all_activities().any(|a| a.schedule.arrival > shift_end)
+                            });
+                            let has_more_unassigned = solution.unassigned.len() > init_unassigned_count;
+
+                            if has_schedule_violation || has_more_unassigned {
+                                eprintln!(
+                                    "[guard] solver output invalid (violation={has_schedule_violation}, \
+                                     unassigned: {} vs {init_unassigned_count}), falling back to initial",
+                                    solution.unassigned.len()
+                                );
+                                out_buffer.write_all(raw)?;
+                                return Ok(());
+                            }
+                        }
 
                         solution_writer(&problem, solution, out_buffer, geo_buffer)?;
 
@@ -261,15 +287,21 @@ fn read_init_solutions_if_necessary(
     environment: Arc<Environment>,
     init_solution_file: Option<File>,
     InitSolutionReader(init_reader): &InitSolutionReader,
-) -> GenericResult<Vec<InsertionContext>> {
+) -> GenericResult<(Vec<InsertionContext>, usize)> {
     Ok(match init_solution_file {
         Some(file) => {
-            let init_solution = Timer::measure_duration_with_callback(
+            let (init_solution, unassigned_count) = Timer::measure_duration_with_callback(
                 || {
                     init_reader(file, problem.clone())
                         .map_err(|err| GenericError::from(format!("cannot read initial solution '{err}'")))
                         .map(|solution| {
-                            InsertionContext::new_from_solution(problem.clone(), (solution, None), environment.clone())
+                            let unassigned_count = solution.unassigned.len();
+                            let ctx = InsertionContext::new_from_solution(
+                                problem.clone(),
+                                (solution, None),
+                                environment.clone(),
+                            );
+                            (ctx, unassigned_count)
                         })
                 },
                 |duration| {
@@ -278,9 +310,9 @@ fn read_init_solutions_if_necessary(
                     )
                 },
             )?;
-            vec![init_solution]
+            (vec![init_solution], unassigned_count)
         }
-        _ => Vec::default(),
+        _ => (Vec::default(), 0),
     })
 }
 
